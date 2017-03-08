@@ -8,6 +8,9 @@ from pymysqlreplication.row_event import DeleteRowsEvent
 import time
 import argparse
 import simplejson as json
+import sys
+import signal
+import traceback
 
 
 class MySQLBinlogStat(object):
@@ -45,7 +48,6 @@ class MySQLBinlogStat(object):
             schema: 数据库名称
         Return: None
         Raise: None
-
         Table stat info struct:
             _table_stat_info = {
                 'test': { # 数据库名称
@@ -63,7 +65,6 @@ class MySQLBinlogStat(object):
             table: 表名称
         Return: None
         Raise: None
-
         Table stat info struct:
             _table_stat_info['test'] = {
                 't1': { # 表名称
@@ -341,14 +342,15 @@ class MySQLBinlogStat(object):
         """循环解析并统计"""
 
         for binlogevent in self.stream:
-            if binlogevent.event_type == 30: # WriteRowsEvent(WRITE_ROWS_EVENT)
+
+            if binlogevent.event_type in [23, 30]: # WriteRowsEvent(WRITE_ROWS_EVENT)
                 self.insert_row_stat(binlogevent)
                 self.insert_row_col_stat(binlogevent)
-            elif binlogevent.event_type == 31: # UpdateRowsEvent(UPDATE_ROWS_EVENT)
+            elif binlogevent.event_type in [24, 31]: # UpdateRowsEvent(UPDATE_ROWS_EVENT)
                 self.update_row_stat(binlogevent)
                 self.update_row_col_stat(binlogevent)
                 pass
-            elif binlogevent.event_type == 32: # DeleteRowsEvent(DELETE_ROWS_EVENT)
+            elif binlogevent.event_type == [25, 32]: # DeleteRowsEvent(DELETE_ROWS_EVENT)
                 self.delete_row_stat(binlogevent)
 
     def print_format(self, content):
@@ -437,8 +439,31 @@ def parse_args():
 
     return args
 
+def kill_sign_op(signum, frame):
+    """当接收到kill 信号执行关闭流打印输出 和"""
+
+    global mysql_binlog_stat # 使用全局mysql_binlog_stat
+
+    if mysql_binlog_stat != None: # 不为空才执行
+
+        # 关闭流
+        mysql_binlog_stat.stream.close()
+
+        # 打印数据
+        mysql_binlog_stat.print_sort_stat()
+
+    sys.exit(0)
+
+
+# 定义全局变量
+mysql_binlog_stat = None
 
 def main():
+
+    global mysql_binlog_stat # 使用前面的全局变量
+
+    # 注册 捕获型号kill信号
+    signal.signal(signal.SIGTERM, kill_sign_op)
 
     args = parse_args() # 解析传入参数
 
@@ -468,9 +493,20 @@ def main():
     stream = BinLogStreamReader(**stream_conf)
 
     mysql_binlog_stat = MySQLBinlogStat(stream)
-    mysql_binlog_stat.run_parse()
-    stream.close()
 
+    try:
+        mysql_binlog_stat.run_parse()
+
+    except KeyboardInterrupt: # 捕捉 KeyboardInterrupt 异常
+        print 'force to exit...'
+
+    except Exception as e:
+        print traceback.format_exc()
+
+    finally: # 最终需要关闭流
+        mysql_binlog_stat.stream.close()
+
+    # 打印数据
     mysql_binlog_stat.print_sort_stat(by=args.sorted_by)
 
 
