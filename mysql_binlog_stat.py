@@ -350,7 +350,7 @@ class MySQLBinlogStat(object):
                 self.update_row_stat(binlogevent)
                 self.update_row_col_stat(binlogevent)
                 pass
-            elif binlogevent.event_type == [25, 32]: # DeleteRowsEvent(DELETE_ROWS_EVENT)
+            elif binlogevent.event_type in [25, 32]: # DeleteRowsEvent(DELETE_ROWS_EVENT)
                 self.delete_row_stat(binlogevent)
 
     def print_format(self, content):
